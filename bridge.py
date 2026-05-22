@@ -297,6 +297,9 @@ class ChatBridge:
 
         self.user_id = 0
         self.csrf_token = ""
+        self.telegram_app = None
+        self.discord_bot = None
+        self.session_alerted = False
 
         self.headers = {
             "Accept": "application/json, text/plain, */*",
@@ -755,22 +758,78 @@ class ChatBridge:
             "receiver_id": None,
             "bot_id": None,
         }
-        try:
-            resp = await self.client.post("/api/chat/messages", json=payload)
-            resp.raise_for_status()
-            return True
-        except Exception as e:
-            _log_http_failure("send_message", e)
-            return False
+        for attempt in range(2):
+            try:
+                resp = await self.client.post("/api/chat/messages", json=payload)
+                if resp.status_code in (419, 401, 403):
+                    if attempt == 0:
+                        logger.warning(f"send_message: HTTP {resp.status_code} (CSRF/sessão); renovando e retentando")
+                        await self.update_session_data()
+                        payload["user_id"] = self.user_id
+                        continue
+                    await self.notify_session_expired()
+                resp.raise_for_status()
+                self._mark_session_ok()
+                return True
+            except Exception as e:
+                _log_http_failure("send_message", e)
+                return False
+        return False
 
     async def delete_message(self, site_msg_id: int) -> bool:
-        try:
-            resp = await self.client.post(f"/api/chat/message/{site_msg_id}/delete")
-            resp.raise_for_status()
-            return True
-        except Exception as e:
-            _log_http_failure(f"delete_message {site_msg_id}", e)
-            return False
+        for attempt in range(2):
+            try:
+                resp = await self.client.post(f"/api/chat/message/{site_msg_id}/delete")
+                if resp.status_code in (419, 401, 403):
+                    if attempt == 0:
+                        logger.warning(f"delete_message {site_msg_id}: HTTP {resp.status_code} (CSRF/sessão); renovando e retentando")
+                        await self.update_session_data()
+                        continue
+                    await self.notify_session_expired()
+                resp.raise_for_status()
+                self._mark_session_ok()
+                return True
+            except Exception as e:
+                _log_http_failure(f"delete_message {site_msg_id}", e)
+                return False
+        return False
+
+    def _mark_session_ok(self) -> None:
+        if self.session_alerted:
+            logger.info("✅ Sessão recuperada")
+            self.session_alerted = False
+
+    async def notify_session_expired(self) -> None:
+        if self.session_alerted:
+            return
+        self.session_alerted = True
+        logger.error("🚨 Sessão expirou e não pôde ser renovada. Atualize cookies/cookies.txt e reinicie.")
+        text = (
+            "🚨 <b>Sessão expirada</b>\n"
+            f"O cookie de <code>{self.base_url}</code> expirou e não pôde ser renovado automaticamente.\n"
+            "Atualize <code>cookies/cookies.txt</code> e reinicie o bot."
+        )
+        if self.telegram_app:
+            try:
+                await self.telegram_app.bot.send_message(
+                    chat_id=self.tg_chat_id,
+                    message_thread_id=self.tg_topic_id,
+                    text=text,
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.warning(f"Não consegui enviar alerta no Telegram: {e}")
+        if self.discord_bot:
+            try:
+                channel = self.discord_bot.get_channel(self.discord_bot.channel_id)
+                if channel:
+                    await channel.send(
+                        f"🚨 **Sessão expirada**\n"
+                        f"O cookie de `{self.base_url}` expirou e não pôde ser renovado automaticamente.\n"
+                        "Atualize `cookies/cookies.txt` e reinicie o bot."
+                    )
+            except Exception as e:
+                logger.warning(f"Não consegui enviar alerta no Discord: {e}")
 
     async def auth_ws_channel(self, socket_id: str) -> dict:
         try:

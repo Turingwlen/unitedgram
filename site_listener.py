@@ -297,34 +297,12 @@ async def heartbeat(bridge):
 
 
 async def cookie_health_probe(bridge, app: Application):
-    alerted = False
     while True:
         await asyncio.sleep(settings.cookie_probe_interval)
         success = await bridge.update_session_data()
         if not success:
-            if not alerted:
-                logger.error("🚨 Sessão expirou ou falha ao atualizar cookies. Atualize cookies.txt e CSRF_TOKEN.")
-                if not app:
-                    alerted = True
-                    continue
-                try:
-                    await app.bot.send_message(
-                        chat_id=bridge.tg_chat_id,
-                        message_thread_id=bridge.tg_topic_id,
-                        text=(
-                            f"🚨 <b>Sessão expirada ou Erro de Rede</b>\n"
-                            f"Falha ao atualizar cookies em <code>{bridge.base_url}</code>.\n"
-                            f"Atualize <code>cookies/cookies.txt</code> e reinicie."
-                        ),
-                        parse_mode="HTML",
-                    )
-                except Exception as e:
-                    logger.warning(f"Não consegui enviar alerta no Telegram: {e}")
-                alerted = True
-        elif success and alerted:
-            logger.info("✅ Sessão recuperada")
-            alerted = False
-        elif success:
+            await bridge.notify_session_expired()
+        else:
             logger.info("✅ Cookies atualizados e salvos com sucesso")
 
 

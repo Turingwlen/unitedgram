@@ -55,6 +55,7 @@ async def main():
                 await app.start()
             else:
                 logger.warning("TELEGRAM_BOT_TOKEN não configurado, pulando Telegram.")
+        bridge.telegram_app = app
 
         await initial_backfill(bridge)
 
@@ -67,6 +68,7 @@ async def main():
                 tasks.append(asyncio.create_task(ds_bot.start(ds_token)))
             else:
                 logger.warning("DISCORD_BOT_TOKEN não configurado, pulando Discord.")
+        bridge.discord_bot = ds_bot
 
         tasks.extend([
             asyncio.create_task(message_worker(bridge, app, ds_bot)),
