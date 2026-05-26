@@ -250,7 +250,11 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                     # Autor com o nome do usuário e o ícone (avatar)
                     embed.set_author(name=m_username if m_username else "Sistema", icon_url=f"attachment://avatar.{ext}")
 
-                    msg_ds = await channel.send(file=file, embed=embed)
+                    content = None
+                    if settings.discord_user_id and f"<@{settings.discord_user_id}>" in (description or ""):
+                        content = f"<@{settings.discord_user_id}>"
+
+                    msg_ds = await channel.send(content=content, file=file, embed=embed)
                     if is_me and settings.show_delete_button:
                         with contextlib.suppress(BaseException):
                             await msg_ds.add_reaction("🗑️")
