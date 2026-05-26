@@ -167,7 +167,8 @@ def format_discord_message(bridge, msg_data: dict) -> str:
                 reply_txt = m_old.group("reply")
 
     if to_user is not None:
-        to_user_disp = f"**{to_user.strip()}**"
+        clean_to_user = to_user.strip().lower().lstrip("@")
+        to_user_disp = f"<@{settings.discord_user_id}>" if clean_to_user in bridge.aliases and settings.discord_user_id else f"**{to_user.strip()}**"
 
         quoted_text = tag_aliases(bridge, quoted or "").strip()
         # Discord blockquote: prefix each line with >
@@ -204,7 +205,8 @@ def format_discord_body(bridge, raw_text: str) -> str:
         reply_txt = m_bb_quote.group("reply")
 
     if to_user is not None:
-        to_user_disp = f"**{to_user.strip()}**"
+        clean_to_user = to_user.strip().lower().lstrip("@")
+        to_user_disp = f"<@{settings.discord_user_id}>" if clean_to_user in bridge.aliases and settings.discord_user_id else f"**{to_user.strip()}**"
         # Discord blockquote: prefix each line with >
         quoted_text = tag_aliases(bridge, (quoted or "").strip())
         quoted_format = "\n".join(f"> {line}" for line in quoted_text.split("\n"))
