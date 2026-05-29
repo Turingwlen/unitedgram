@@ -272,7 +272,9 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
     if sent_msg_ds_id:
         bridge._cache_message(sent_msg_ds_id, m)
 
-    if not sent_msg_tg and not sent_msg_ds_id and transient_failure:
+    if sent_msg_tg or sent_msg_ds_id:
+        return
+    if transient_failure:
         # Libera o ID do dedup pra um reconcile via HTTP poder recuperar a msg.
         bridge.queued_ids.pop(site_id, None)
         logger.error(f"deliver_message {site_id}: não entregue (erro transitório) — ID liberado p/ reconcile")
