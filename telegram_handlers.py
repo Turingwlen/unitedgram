@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 
 from bridge import ChatBridge
 from formatting import build_bbcode_payload
-from stickers import process_telegram_sticker, sticker_bbcode
+from stickers import download_telegram_file, process_telegram_sticker, sticker_bbcode, telegram_animation_to_gif
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,19 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data, ext = result
                 img_url = await bridge.upload_to_imgbb(data, ephemeral=True, filename=f"sticker.{ext}")
                 if img_url: bbcode_img = sticker_bbcode(img_url)
-        except Exception: pass
+        except Exception as e:
+            logger.warning(f"forward_handler: falha processando sticker: {e}")
+    elif update.message.animation:
+        try:
+            anim = update.message.animation
+            file_bytes = await download_telegram_file(context.bot, anim.file_id, "animation")
+            if file_bytes is not None:
+                gif_data = await telegram_animation_to_gif(file_bytes, getattr(anim, "mime_type", "") or "")
+                img_url = await bridge.upload_to_imgbb(gif_data, ephemeral=True, filename="anim.gif")
+                if img_url: bbcode_img = f"[img]{img_url}[/img]"
+                else: await update.message.reply_text("❌ Falha no upload do GIF.")
+        except Exception as e:
+            logger.warning(f"forward_handler: falha processando GIF/animation: {e}")
 
     if not text and not bbcode_img: return
     final_text = f"{text}\n{bbcode_img}".strip()

@@ -25,6 +25,25 @@ MAX_VIDEO_FRAMES = 60
 VIDEO_TARGET_FPS = 15
 _CACHE_EXTS = ("gif", "png", "webp")
 
+_DL_RETRY_BACKOFFS = (1, 3)
+_DL_TIMEOUT = 30.0
+
+
+async def download_telegram_file(bot, file_id: str, ctx: str) -> Optional[bytes]:
+    last_err = None
+    for attempt in range(len(_DL_RETRY_BACKOFFS) + 1):
+        try:
+            file_obj = await bot.get_file(file_id, read_timeout=_DL_TIMEOUT, connect_timeout=_DL_TIMEOUT)
+            return bytes(await file_obj.download_as_bytearray(read_timeout=_DL_TIMEOUT))
+        except Exception as e:
+            last_err = e
+            if attempt < len(_DL_RETRY_BACKOFFS):
+                wait = _DL_RETRY_BACKOFFS[attempt]
+                logger.warning(f"{ctx}: falha no download ({e}); retry em {wait}s (tentativa {attempt + 1})")
+                await asyncio.sleep(wait)
+    logger.warning(f"{ctx}: falha no download após {len(_DL_RETRY_BACKOFFS) + 1} tentativas: {last_err}")
+    return None
+
 
 def _cached(platform: str, unique_id: str) -> Optional[tuple[bytes, str]]:
     for ext in _CACHE_EXTS:
@@ -52,10 +71,10 @@ def _render_lottie_to_gif(raw_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
-def _render_webm_to_gif(raw_bytes: bytes) -> bytes:
+def _render_video_to_gif(raw_bytes: bytes, extension: str = ".webm") -> bytes:
     import imageio.v3 as iio
 
-    frames_np = iio.imread(io.BytesIO(raw_bytes), plugin="FFMPEG", extension=".webm")
+    frames_np = iio.imread(io.BytesIO(raw_bytes), plugin="FFMPEG", extension=extension)
     if frames_np.ndim == 3:
         frames_np = frames_np[None, ...]
 
@@ -64,7 +83,7 @@ def _render_webm_to_gif(raw_bytes: bytes) -> bytes:
     frames = [Image.fromarray(frames_np[i]).convert("RGBA") for i in range(0, total, step)]
 
     if not frames:
-        raise ValueError("WebM sem frames")
+        raise ValueError(f"vídeo ({extension}) sem frames")
 
     out = io.BytesIO()
     duration = int(1000 / VIDEO_TARGET_FPS)
@@ -78,6 +97,18 @@ def _render_webm_to_gif(raw_bytes: bytes) -> bytes:
         disposal=2,
     )
     return out.getvalue()
+
+
+def _render_webm_to_gif(raw_bytes: bytes) -> bytes:
+    return _render_video_to_gif(raw_bytes, ".webm")
+
+
+async def telegram_animation_to_gif(raw_bytes: bytes, mime_type: str = "") -> bytes:
+    """GIFs do Telegram chegam como MP4 (video/mp4); converte pra GIF real.
+    Se já vier como image/gif, devolve como está."""
+    if mime_type == "image/gif" or raw_bytes[:4] in (b"GIF8",):
+        return raw_bytes
+    return await asyncio.to_thread(_render_video_to_gif, raw_bytes, ".mp4")
 
 
 def _apng_to_gif(raw_bytes: bytes) -> bytes:
@@ -109,11 +140,8 @@ async def process_telegram_sticker(sticker, bot) -> Optional[tuple[bytes, str]]:
     if (hit := _cached("tg", unique_id)) is not None:
         return hit
 
-    try:
-        file_obj = await bot.get_file(sticker.file_id)
-        raw = bytes(await file_obj.download_as_bytearray())
-    except Exception as e:
-        logger.warning(f"sticker(tg/{unique_id}): falha no download: {e}")
+    raw = await download_telegram_file(bot, sticker.file_id, f"sticker(tg/{unique_id})")
+    if raw is None:
         return None
 
     try:
