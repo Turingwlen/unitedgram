@@ -1,11 +1,86 @@
+import argparse
 import asyncio
 import logging
 import os
 import time
+from pathlib import Path
 
 import config
 
-config.setup()
+# Resolver os caminhos padrão e do arg -tk a partir daqui, e não do diretório atual,
+# para que funcionem mesmo que o bot seja iniciado de # outro lugar (ex.: systemd, cron).
+# Para os args --env e --cookies deixei o path todo porque me parece mais
+# lógico que é para apontar para um arquivo específico ao invés de relativo
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
+    """Lê os argumentos de linha de comando do bot."""
+    parser = argparse.ArgumentParser(
+        prog="unitedgram",
+        description="Ponte de sincronização WebSocket <-> Telegram/Discord.",
+    )
+    parser.add_argument(
+        "--env",
+        dest="env_file",
+        metavar="ARQUIVO",
+        default=None,
+        help="Caminho do arquivo .env (padrão: .env). "
+             "Tem prioridade sobre -tk para o arquivo de ambiente.",
+    )
+    parser.add_argument(
+        "--cookies", "--cookie",
+        dest="cookies_file",
+        metavar="ARQUIVO",
+        default=None,
+        help="Caminho do arquivo de cookies no formato Netscape "
+             "(padrão: cookies/cookies.txt). Tem prioridade sobre -tk para os cookies.",
+    )
+    parser.add_argument(
+        "-tk", "--tracker",
+        dest="tk",
+        metavar="NOME",
+        default=None,
+        help="Atalho: carrega .NOME.env e cookies/cookies.NOME.txt de uma vez. "
+             "Um --env/--cookies explícito ainda tem prioridade sobre este atalho.",
+    )
+    return parser.parse_args(argv)
+
+
+def _resolve_config_paths(args: argparse.Namespace) -> "tuple[Path, Path]":
+    """Decide quais arquivos .env e cookies usar.
+
+    Precedência (avaliada por arquivo, de forma independente):
+        --env / --cookies explícito  >  atalho -tk  >  padrão
+    Por ser por arquivo, é válido combinar -tk com apenas um override
+    (ex.: `-tk cba --env outro.env` usa outro.env mas mantém os cookies do cba).
+    """
+    if args.env_file is not None:
+        env_path = Path(args.env_file).expanduser()
+    elif args.tk:
+        env_path = BASE_DIR / f".{args.tk}.env"
+    else:
+        env_path = BASE_DIR / ".env"
+
+    if args.cookies_file is not None:
+        cookies_path = Path(args.cookies_file).expanduser()
+    elif args.tk:
+        cookies_path = BASE_DIR / "cookies" / f"cookies.{args.tk}.txt"
+    else:
+        cookies_path = BASE_DIR / "cookies" / "cookies.txt"
+
+    return env_path, cookies_path
+
+
+_args = _parse_args()
+_env_path, _cookies_path = _resolve_config_paths(_args)
+
+# config.setup() configura o logging e carrega o .env escolhido em os.environ
+# de onde todo o restante do código lê as variáveis de configuração.
+config.setup(env_path=_env_path)
+
+logger = logging.getLogger(__name__)
+logger.info("Configuração: env=%s | cookies=%s", _env_path, _cookies_path)
 
 from telegram.ext import (
     Application,
@@ -33,11 +108,9 @@ from telegram_handlers import (
     status,
 )
 
-logger = logging.getLogger(__name__)
-
 
 async def main():
-    async with ChatBridge.from_env() as bridge:
+    async with ChatBridge.from_env(cookies_path=_cookies_path) as bridge:
         app = None
         if settings.enable_telegram:
             token = os.getenv("TELEGRAM_BOT_TOKEN")
