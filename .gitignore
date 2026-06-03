@@ -1,6 +1,7 @@
 # --- segredos ---
 .env
 .env.*
+*.env
 !.env.example
 *.pem
 *.key
