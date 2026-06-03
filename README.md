@@ -189,6 +189,36 @@ Se vir no log:
 
 **Tá funcionando.** ✅
 
+### Escolher qual `.env` / `cookies.txt` usar (múltiplas instâncias)
+
+Por padrão o `main.py` carrega `.env` e `cookies/cookies.txt`. Para rodar mais
+de uma instância (contas ou sites diferentes) sem duplicar a pasta do projeto,
+passe os arquivos por argumento:
+
+| Flag | O que faz |
+|------|-----------|
+| `--env ARQUIVO` | usa um `.env` específico (padrão: `.env`) |
+| `--cookies ARQUIVO` | usa um `cookies.txt` específico (padrão: `cookies/cookies.txt`) |
+| `-tk / --tracker NOME` | atalho: carrega `.NOME.env` **e** `cookies/cookies.NOME.txt` de uma vez |
+
+```bash
+python main.py                                           # .env     + cookies/cookies.txt      (padrão)
+python main.py -tk cba                                   # .cba.env + cookies/cookies.cba.txt
+python main.py --env prod.env --cookies cookies/prod.txt # caminhos explícitos
+```
+
+**Precedência:** `--env`/`--cookies` sempre ganham do `-tk`, e a decisão é feita
+**por arquivo** — então dá pra combinar o atalho com um único override:
+
+```bash
+python main.py -tk cba --env staging.env   # env = staging.env  |  cookies = cookies/cookies.cba.txt
+```
+
+> Os caminhos padrão e os do `-tk` são resolvidos a partir da pasta do projeto
+> (onde está o `main.py`), então funcionam mesmo iniciando o bot via systemd ou
+> de outro diretório. Já um caminho passado em `--env`/`--cookies` é usado como
+> você digitou (relativo ao diretório atual, ou absoluto).
+
 ### 4. Rodar como service no Linux
 
 Crie `/etc/systemd/system/unitedgram.service`:
