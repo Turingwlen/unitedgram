@@ -57,7 +57,7 @@ def _envbool(key: str, default: bool) -> bool:
     return v.strip().lower() in ("1", "true", "yes", "on", "y", "sim")
 
 
-def setup() -> None:
+def setup(env_path: "str | os.PathLike | None" = None) -> None:
     global _initialized
     if _initialized:
         return
@@ -69,7 +69,10 @@ def setup() -> None:
             logging.StreamHandler(),
         ],
     )
-    load_dotenv(dotenv_path=Path(__file__).parent / '.env')
+    # Sem argumento, mantém o comportamento antigo: .env na mesma pasta deste módulo.
+    if env_path is None:
+        env_path = Path(__file__).parent / '.env'
+    load_dotenv(dotenv_path=env_path)
     settings.telegram_user = os.getenv("TELEGRAM_USER", "")
     settings.discord_user_id = os.getenv("DISCORD_USER_ID", "")
     settings.backfill_count = _envint("BACKFILL_COUNT", 10)
