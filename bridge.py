@@ -285,7 +285,7 @@ class BridgeConfig:
 
 
 class ChatBridge:
-    def __init__(self, cfg: BridgeConfig):
+    def __init__(self, cfg: BridgeConfig, cookies_path: "str | os.PathLike | None" = None):
         self.cfg = cfg
         self.base_url = cfg.base_url
         self.ws_host = cfg.ws_host
@@ -308,13 +308,19 @@ class ChatBridge:
             "User-Agent": settings.user_agent,
         }
 
-        cookies_dir = Path("cookies")
-        cookies_dir.mkdir(exist_ok=True)
-        self.cookie_jar = http.cookiejar.MozillaCookieJar(cookies_dir / "cookies.txt")
+        # Caminho do arquivo de cookies. Sem argumento, mantém o padrão
+        # antigo (cookies/cookies.txt, relativo ao diretório do script).
+        if cookies_path is None:
+            cookies_path = Path("cookies") / "cookies.txt"
+        else:
+            cookies_path = Path(cookies_path)
+        self.cookie_path = cookies_path
+        cookies_path.parent.mkdir(parents=True, exist_ok=True)
+        self.cookie_jar = http.cookiejar.MozillaCookieJar(cookies_path)
         try:
             self.cookie_jar.load(ignore_discard=True, ignore_expires=True)
         except FileNotFoundError:
-            logger.warning("Arquivo de cookies não encontrado em cookies/cookies.txt")
+            logger.warning(f"Arquivo de cookies não encontrado em {cookies_path}")
         except Exception as e:
             logger.error(f"Erro ao carregar cookies: {e}")
 
@@ -344,8 +350,8 @@ class ChatBridge:
         self.online: dict[int, str] = {}
 
     @classmethod
-    def from_env(cls) -> "ChatBridge":
-        return cls(BridgeConfig.from_env())
+    def from_env(cls, cookies_path: "str | os.PathLike | None" = None) -> "ChatBridge":
+        return cls(BridgeConfig.from_env(), cookies_path=cookies_path)
 
     async def __aenter__(self) -> "ChatBridge":
         if not await self.update_session_data():
@@ -803,11 +809,11 @@ class ChatBridge:
         if self.session_alerted:
             return
         self.session_alerted = True
-        logger.error("🚨 Sessão expirou e não pôde ser renovada. Atualize cookies/cookies.txt e reinicie.")
+        logger.error(f"🚨 Sessão expirou e não pôde ser renovada. Atualize {self.cookie_path} e reinicie.")
         text = (
             "🚨 <b>Sessão expirada</b>\n"
             f"O cookie de <code>{self.base_url}</code> expirou e não pôde ser renovado automaticamente.\n"
-            "Atualize <code>cookies/cookies.txt</code> e reinicie o bot."
+            f"Atualize <code>{self.cookie_path}</code> e reinicie o bot."
         )
         if self.telegram_app:
             try:
@@ -826,7 +832,7 @@ class ChatBridge:
                     await channel.send(
                         f"🚨 **Sessão expirada**\n"
                         f"O cookie de `{self.base_url}` expirou e não pôde ser renovado automaticamente.\n"
-                        "Atualize `cookies/cookies.txt` e reinicie o bot."
+                        f"Atualize `{self.cookie_path}` e reinicie o bot."
                     )
             except Exception as e:
                 logger.warning(f"Não consegui enviar alerta no Discord: {e}")
